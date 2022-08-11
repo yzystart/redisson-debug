@@ -54,6 +54,7 @@ public class RedissonLock extends RedissonBaseLock {
     public RedissonLock(CommandAsyncExecutor commandExecutor, String name) {
         super(commandExecutor, name);
         this.commandExecutor = commandExecutor;
+        // 等待获取锁的时间 ： 30s
         this.internalLockLeaseTime = commandExecutor.getConnectionManager().getCfg().getLockWatchdogTimeout();
         this.pubSub = commandExecutor.getConnectionManager().getSubscribeService().getLockPubSub();
     }
@@ -93,9 +94,10 @@ public class RedissonLock extends RedissonBaseLock {
 
     private void lock(long leaseTime, TimeUnit unit, boolean interruptibly) throws InterruptedException {
         long threadId = Thread.currentThread().getId();
+        // 尝试获取锁，如果没取到锁，则返回锁的剩余超时时间
         Long ttl = tryAcquire(-1, leaseTime, unit, threadId);
         // lock acquired
-        if (ttl == null) {
+        if (ttl == null) { //表示获取到了锁
             return;
         }
 
@@ -109,11 +111,12 @@ public class RedissonLock extends RedissonBaseLock {
         }
 
         try {
+            // 死循环 tryAcquire 拿锁
             while (true) {
                 ttl = tryAcquire(-1, leaseTime, unit, threadId);
                 // lock acquired
                 if (ttl == null) {
-                    break;
+                    break; //得到锁退出循环
                 }
 
                 // waiting for message
@@ -177,7 +180,7 @@ public class RedissonLock extends RedissonBaseLock {
         }
         CompletionStage<Long> f = ttlRemainingFuture.thenApply(ttlRemaining -> {
             // lock acquired
-            if (ttlRemaining == null) {
+            if (ttlRemaining == null) { //结果为null说明得到了锁
                 if (leaseTime > 0) {
                     internalLockLeaseTime = unit.toMillis(leaseTime);
                 } else {
@@ -196,17 +199,17 @@ public class RedissonLock extends RedissonBaseLock {
 
     <T> RFuture<T> tryLockInnerAsync(long waitTime, long leaseTime, TimeUnit unit, long threadId, RedisStrictCommand<T> command) {
         return evalWriteAsync(getRawName(), LongCodec.INSTANCE, command,
-                "if (redis.call('exists', KEYS[1]) == 0) then " +
-                        "redis.call('hincrby', KEYS[1], ARGV[2], 1); " +
-                        "redis.call('pexpire', KEYS[1], ARGV[1]); " +
-                        "return nil; " +
+                "if (redis.call('exists', KEYS[1]) == 0) then " +  // key不存在，表示锁未被占用
+                        "redis.call('hincrby', KEYS[1], ARGV[2], 1); " + //key[1]为锁名称，ARGV[2]为 传入的name：Redisson客户端ID:线程ID 对应getLockName(threadId)
+                        "redis.call('pexpire', KEYS[1], ARGV[1]); " + //对这个key设置过期时间
+                        "return nil; " +   // 获取锁成功
                         "end; " +
-                        "if (redis.call('hexists', KEYS[1], ARGV[2]) == 1) then " +
-                        "redis.call('hincrby', KEYS[1], ARGV[2], 1); " +
-                        "redis.call('pexpire', KEYS[1], ARGV[1]); " +
-                        "return nil; " +
+                        "if (redis.call('hexists', KEYS[1], ARGV[2]) == 1) then " + //如果是当前线程占有锁
+                        "redis.call('hincrby', KEYS[1], ARGV[2], 1); " + //重入计数+1
+                        "redis.call('pexpire', KEYS[1], ARGV[1]); " + // 重新设置过期时间
+                        "return nil; " + // 重入锁成功
                         "end; " +
-                        "return redis.call('pttl', KEYS[1]);",
+                        "return redis.call('pttl', KEYS[1]);", //获取锁失败，返回锁剩余超时时间
                 Collections.singletonList(getRawName()), unit.toMillis(leaseTime), getLockName(threadId));
     }
 

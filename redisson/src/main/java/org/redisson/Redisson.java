@@ -70,6 +70,8 @@ public class Redisson implements RedissonClient {
         if (config.isReferenceEnabled()) {
             objectBuilder = new RedissonObjectBuilder(this);
         }
+        System.out.println("init commandExecutor");
+
         commandExecutor = new CommandSyncService(connectionManager, objectBuilder);
         evictionScheduler = new EvictionScheduler(commandExecutor);
         writeBehindService = new WriteBehindService(commandExecutor);
