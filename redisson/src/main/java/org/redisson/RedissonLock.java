@@ -197,7 +197,7 @@ public class RedissonLock extends RedissonBaseLock {
         return get(tryLockAsync());
     }
 
-    <T> RFuture<T> tryLockInnerAsync(long waitTime, long leaseTime, TimeUnit unit, long threadId, RedisStrictCommand<T> command) {
+     <T> RFuture<T> tryLockInnerAsync(long waitTime, long leaseTime, TimeUnit unit, long threadId, RedisStrictCommand<T> command) {
         return evalWriteAsync(getRawName(), LongCodec.INSTANCE, command,
                 "if (redis.call('exists', KEYS[1]) == 0) then " +  // key不存在，表示锁未被占用
                         "redis.call('hincrby', KEYS[1], ARGV[2], 1); " + //key[1]为锁名称，ARGV[2]为 传入的name：Redisson客户端ID:线程ID 对应getLockName(threadId)
@@ -210,7 +210,9 @@ public class RedissonLock extends RedissonBaseLock {
                         "return nil; " + // 重入锁成功
                         "end; " +
                         "return redis.call('pttl', KEYS[1]);", //获取锁失败，返回锁剩余超时时间
-                Collections.singletonList(getRawName()), unit.toMillis(leaseTime), getLockName(threadId));
+                Collections.singletonList(getRawName()), //KEY[]
+                unit.toMillis(leaseTime), // ARGV[1]
+                getLockName(threadId)); //ARGV[2]
     }
 
     @Override
