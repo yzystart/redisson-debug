@@ -66,6 +66,7 @@ abstract class PublishSubscribe<E extends PubSubEntry<E>> {
     }
 
     public CompletableFuture<E> subscribe(String entryName, String channelName) {
+        System.out.println("on PublishSubscribe::subscribe  ");
         AsyncSemaphore semaphore = service.getSemaphore(new ChannelName(channelName));
         CompletableFuture<E> newPromise = new CompletableFuture<>();
 
@@ -106,7 +107,8 @@ abstract class PublishSubscribe<E extends PubSubEntry<E>> {
                 return;
             }
 
-            RedisPubSubListener<Object> listener = createListener(channelName, value);
+            RedisPubSubListener<Object> listener = createListener(channelName, value); //创建监听器。
+
             CompletableFuture<PubSubConnectionEntry> s = service.subscribeNoTimeout(LongCodec.INSTANCE, channelName, semaphore, listener);
             newPromise.whenComplete((r, e) -> {
                 if (e != null) {
@@ -138,7 +140,7 @@ abstract class PublishSubscribe<E extends PubSubEntry<E>> {
                 if (!channelName.equals(channel.toString())) {
                     return;
                 }
-
+                System.out.println("onMessage.......");
                 PublishSubscribe.this.onMessage(value, (Long) message);
             }
         };

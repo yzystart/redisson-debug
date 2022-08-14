@@ -336,9 +336,9 @@ public class CommandAsyncService implements CommandAsyncExecutor {
     }
 
     @Override
-    public <T, R> RFuture<R> evalWriteAsync(String key, Codec codec, RedisCommand<T> evalCommandType, String script, List<Object> keys, Object... params) {
+    public <T, R> RFuture<R> evalWriteAsync(String key, Codec codec, RedisCommand<T> evalCommandType, String script, List<Object> keys, Object... argv) {
         NodeSource source = getNodeSource(key);
-        return evalAsync(source, false, codec, evalCommandType, script, keys, false, params);
+        return evalAsync(source, false, codec, evalCommandType, script, keys, false, argv);
     }
 
     @Override
@@ -422,6 +422,8 @@ public class CommandAsyncService implements CommandAsyncExecutor {
             } else {
                 cmd = new RedisCommand(evalCommandType, "EVALSHA");
             }
+
+            // 把keys 和 argv 全部装进args
             List<Object> args = new ArrayList<Object>(2 + keys.size() + params.length);
             args.add(sha1);
             args.add(keys.size());

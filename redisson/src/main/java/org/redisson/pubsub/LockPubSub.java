@@ -40,6 +40,7 @@ public class LockPubSub extends PublishSubscribe<RedissonLockEntry> {
 
     @Override
     protected void onMessage(RedissonLockEntry value, Long message) {
+        System.out.println("onMessage..");
         if (message.equals(UNLOCK_MESSAGE)) {
             Runnable runnableToExecute = value.getListeners().poll();
             if (runnableToExecute != null) {

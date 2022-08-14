@@ -160,7 +160,7 @@ public class RedisExecutor<V, R> {
                 }
                 return;
             }
-
+            // 发送命令
             sendCommand(attemptPromise, connection);
 
             scheduleWriteTimeout(attemptPromise);

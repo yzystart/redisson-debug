@@ -137,7 +137,7 @@ public abstract class RedissonBaseLock extends RedissonExpirable implements RLoc
                     return;
                 }
                 
-                CompletionStage<Boolean> future = renewExpirationAsync(threadId);
+                CompletionStage<Boolean> future = renewExpirationAsync(threadId); //锁续费逻辑
                 future.whenComplete((res, e) -> {
                     if (e != null) {
                         log.error("Can't update lock " + getRawName() + " expiration", e);
@@ -147,9 +147,9 @@ public abstract class RedissonBaseLock extends RedissonExpirable implements RLoc
                     
                     if (res) {
                         // reschedule itself
-                        renewExpiration();
+                        renewExpiration(); //再次调用续费
                     } else {
-                        cancelExpirationRenewal(null);
+                        cancelExpirationRenewal(null);//key不存在，无需续费
                     }
                 });
             }
@@ -168,8 +168,8 @@ public abstract class RedissonBaseLock extends RedissonExpirable implements RLoc
             try {
                 renewExpiration();
             } finally {
-                if (Thread.currentThread().isInterrupted()) {
-                    cancelExpirationRenewal(threadId);
+                if (Thread.currentThread().isInterrupted()) { //线程已中断
+                    cancelExpirationRenewal(threadId); // 取消续费
                 }
             }
         }
@@ -177,11 +177,11 @@ public abstract class RedissonBaseLock extends RedissonExpirable implements RLoc
 
     protected CompletionStage<Boolean> renewExpirationAsync(long threadId) {
         return evalWriteAsync(getRawName(), LongCodec.INSTANCE, RedisCommands.EVAL_BOOLEAN,
-                "if (redis.call('hexists', KEYS[1], ARGV[2]) == 1) then " +
-                        "redis.call('pexpire', KEYS[1], ARGV[1]); " +
+                "if (redis.call('hexists', KEYS[1], ARGV[2]) == 1) then " + //如果hkey的field(getLockName(threadId))存在
+                        "redis.call('pexpire', KEYS[1], ARGV[1]); " + //续费时长 internalLockLeaseTime
                         "return 1; " +
                         "end; " +
-                        "return 0;",
+                        "return 0;", //key不存在 ，或者对应field 不是当前线程id 返回0
                 Collections.singletonList(getRawName()),
                 internalLockLeaseTime, getLockName(threadId));
     }
@@ -205,12 +205,12 @@ public abstract class RedissonBaseLock extends RedissonExpirable implements RLoc
         }
     }
 
-    protected <T> RFuture<T> evalWriteAsync(String key, Codec codec, RedisCommand<T> evalCommandType, String script, List<Object> keys, Object... params) {
+    protected <T> RFuture<T> evalWriteAsync(String key, Codec codec, RedisCommand<T> evalCommandType, String script, List<Object> keys, Object... argv) {
         MasterSlaveEntry entry = commandExecutor.getConnectionManager().getEntry(getRawName());
         int availableSlaves = entry.getAvailableSlaves();
 
         CommandBatchService executorService = createCommandBatchService(availableSlaves);
-        RFuture<T> result = executorService.evalWriteAsync(key, codec, evalCommandType, script, keys, params);
+        RFuture<T> result = executorService.evalWriteAsync(key, codec, evalCommandType, script, keys, argv);
         if (commandExecutor instanceof CommandBatchService) {
             return result;
         }

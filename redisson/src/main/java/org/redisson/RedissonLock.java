@@ -98,9 +98,10 @@ public class RedissonLock extends RedissonBaseLock {
         Long ttl = tryAcquire(-1, leaseTime, unit, threadId);
         // lock acquired
         if (ttl == null) { //表示获取到了锁
+            System.out.println(Thread.currentThread().getName()+"得到了锁");
             return;
         }
-
+        // 订阅监听锁是否被释放
         CompletableFuture<RedissonLockEntry> future = subscribe(threadId);
         pubSub.timeout(future);
         RedissonLockEntry entry;
@@ -114,37 +115,43 @@ public class RedissonLock extends RedissonBaseLock {
             // 死循环 tryAcquire 拿锁
             while (true) {
                 ttl = tryAcquire(-1, leaseTime, unit, threadId);
+                System.out.println("while (true) thread:"+Thread.currentThread().getName()+" ttl: "+ttl);
                 // lock acquired
                 if (ttl == null) {
+                    System.out.println("while (true) 得到了锁 "+Thread.currentThread().getName());
                     break; //得到锁退出循环
                 }
 
                 // waiting for message
                 if (ttl >= 0) {
                     try {
-                        entry.getLatch().tryAcquire(ttl, TimeUnit.MILLISECONDS);
+                        entry.getLatch().tryAcquire(ttl, TimeUnit.MILLISECONDS); //定时阻塞等待信号量，之后重新进入循环
+                        System.out.println(Thread.currentThread().getName()+ "tryAcquire continue while true");
                     } catch (InterruptedException e) {
                         if (interruptibly) {
                             throw e;
                         }
                         entry.getLatch().tryAcquire(ttl, TimeUnit.MILLISECONDS);
                     }
-                } else {
+                } else { //ttl<0 已过期
                     if (interruptibly) {
-                        entry.getLatch().acquire();
+                        entry.getLatch().acquire(); //阻塞等待信号量
+                        System.out.println(Thread.currentThread().getName()+ "acquire continue while true");
                     } else {
                         entry.getLatch().acquireUninterruptibly();
                     }
                 }
             }
         } finally {
-            unsubscribe(entry, threadId);
+            unsubscribe(entry, threadId); //加锁成功取消订阅
         }
 //        get(lockAsync(leaseTime, unit));
     }
     
     private Long tryAcquire(long waitTime, long leaseTime, TimeUnit unit, long threadId) {
-        return get(tryAcquireAsync(waitTime, leaseTime, unit, threadId));
+        Long result = get(tryAcquireAsync(waitTime, leaseTime, unit, threadId));
+        System.out.println("ttl: "+result);
+        return result;
     }
     
     private RFuture<Boolean> tryAcquireOnceAsync(long waitTime, long leaseTime, TimeUnit unit, long threadId) {
@@ -184,7 +191,7 @@ public class RedissonLock extends RedissonBaseLock {
                 if (leaseTime > 0) {
                     internalLockLeaseTime = unit.toMillis(leaseTime);
                 } else {
-                    scheduleExpirationRenewal(threadId);
+                    scheduleExpirationRenewal(threadId); //定时延长到期时间，也就是锁续费
                 }
             }
             return ttlRemaining;
@@ -348,19 +355,19 @@ public class RedissonLock extends RedissonBaseLock {
 
     protected RFuture<Boolean> unlockInnerAsync(long threadId) {
         return evalWriteAsync(getRawName(), LongCodec.INSTANCE, RedisCommands.EVAL_BOOLEAN,
-                "if (redis.call('hexists', KEYS[1], ARGV[3]) == 0) then " +
-                        "return nil;" +
+                "if (redis.call('hexists', KEYS[1], ARGV[3]) == 0) then " +  // 如果key对应的线程id不是当前线程或者不存在
+                        "return nil;" + // 返回null
                         "end; " +
-                        "local counter = redis.call('hincrby', KEYS[1], ARGV[3], -1); " +
-                        "if (counter > 0) then " +
-                        "redis.call('pexpire', KEYS[1], ARGV[2]); " +
-                        "return 0; " +
-                        "else " +
-                        "redis.call('del', KEYS[1]); " +
-                        "redis.call('publish', KEYS[2], ARGV[1]); " +
-                        "return 1; " +
+                        "local counter = redis.call('hincrby', KEYS[1], ARGV[3], -1); " + //如果是当前线程：重入计数-1
+                        "if (counter > 0) then " + // 减完后仍然 >0
+                        "redis.call('pexpire', KEYS[1], ARGV[2]); " + //延长过期时间
+                        "return 0; " + //返回 0 表示锁仍被当前持有
+                        "else " + // 减完重入次数后为0
+                        "redis.call('del', KEYS[1]); " + //删除当前key
+                        "redis.call('publish', KEYS[2], ARGV[1]); " + // 通过redis 发布/订阅 通知订阅了要获取这把锁的线程已解锁，可以竞争
+                        "return 1; " + // 1 表示解锁成功
                         "end; " +
-                        "return nil;",
+                        "return nil;", // null
                 Arrays.asList(getRawName(), getChannelName()), LockPubSub.UNLOCK_MESSAGE, internalLockLeaseTime, getLockName(threadId));
     }
 

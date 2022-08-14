@@ -5,6 +5,7 @@ import org.redisson.Redisson;
 import org.redisson.RedissonLock;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
+import org.redisson.client.protocol.RedisCommands;
 import org.redisson.config.Config;
 import org.redisson.util.SleepUtil;
 
@@ -14,12 +15,28 @@ public class LockTest {
 
 
     private static Config config = new Config();
+    static {
+        config.useSingleServer().setAddress("redis://"+"192.168.153.134"+":6379").setDatabase(2);
+    }
+    Redisson redissonClient = (Redisson)Redisson.create(config);
+
 
     @Test
     public void test(){
-        config.useSingleServer().setAddress("redis://"+"192.168.0.25"+":6379").setPassword("123456").setDatabase(2);
+        Thread.currentThread().setName("t1");
 
-        Redisson redissonClient = (Redisson)Redisson.create(config);
+        RedissonLock myLock = (RedissonLock)redissonClient.getLock("myLock");
+
+        myLock.lock();
+
+        SleepUtil.sleep60();
+
+        myLock.unlock();
+    }
+
+    @Test
+    public void test2(){
+        Thread.currentThread().setName("t2");
 
         RedissonLock myLock = (RedissonLock)redissonClient.getLock("myLock");
 
