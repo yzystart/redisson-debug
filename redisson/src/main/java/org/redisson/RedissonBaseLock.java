@@ -183,7 +183,7 @@ public abstract class RedissonBaseLock extends RedissonExpirable implements RLoc
                         "end; " +
                         "return 0;", //key不存在 ，或者对应field 不是当前线程id 返回0
                 Collections.singletonList(getRawName()),
-                internalLockLeaseTime, getLockName(threadId));
+                internalLockLeaseTime, getLockName(threadId)); // 默认 30 * 1000 = 30秒
     }
 
     protected void cancelExpirationRenewal(Long threadId) {
